@@ -38,8 +38,7 @@ static void http_request_done(struct evhttp_request *ev_req, void * const messag
         http_reschedule(ev_req, message);
         return;
     }
-    int code = evhttp_request_get_response_code(ev_req);
-    printf("HTTP request done: %d\n", code);    
+    const int code = evhttp_request_get_response_code(ev_req);
     if (code == 0) {
         http_reschedule(ev_req, message);
         return;
