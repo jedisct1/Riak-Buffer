@@ -13,6 +13,34 @@ static struct bufferevent *queue_sender, *queue_receiver;
 
 static void make_http_request_for_message(Message * const message);
 
+static void retain_message(Message * const message)
+{    
+    assert(message->ref_cnt < UINT_MAX);
+    message->ref_cnt++;
+}
+
+static void free_message(Message * const message)
+{
+    assert(message->ref_cnt == 0U);
+    free(message->bucket);
+    message->bucket = NULL;
+    message->bucket_len = (size_t) 0U;
+    free(message->data);
+    message->data = NULL;
+    message->data_len = (size_t) 0U;
+    free(message);
+}
+
+static void release_message(Message * const message)
+{
+    assert(message->ref_cnt > 0U);
+    message->ref_cnt--;
+    if (message->ref_cnt > 0) {
+        return;
+    }
+    free_message(message);
+}
+
 static void http_reschedule_cb(evutil_socket_t fd, short event,
                                void * const message_)
 {
@@ -36,10 +64,14 @@ static void http_reschedule(struct evhttp_request *ev_req,
     evtimer_add(&message->ev_timer, &tv);
 }
 
-static void http_request_done(struct evhttp_request *ev_req, void * const message_)
+static void http_request_done(struct evhttp_request *ev_req,
+                              void * const message_)
 {
     Message * const message = message_;
-    
+
+    assert(message->ev_conn != NULL);
+    evhttp_connection_free(message->ev_conn);
+    message->ev_conn = NULL;    
     if (ev_req == NULL) {
         http_reschedule(ev_req, message);
         return;
@@ -50,6 +82,7 @@ static void http_request_done(struct evhttp_request *ev_req, void * const messag
         return;
     }
     bufferevent_enable(queue_receiver, EV_READ);
+    release_message(message);
 }
 
 static void make_http_request_for_message(Message * const message)
@@ -70,7 +103,7 @@ static void make_http_request_for_message(Message * const message)
                       "Content-Type", "application/json");
     evbuffer_add(evhttp_request_get_output_buffer(ev_req),
                  message->data, message->data_len);
-    
+    message->ev_conn = ev_conn;    
     const char * const path = evhttp_uri_get_path(ev_uri);
     const size_t path_len = strlen(path);
     const size_t sizeof_uri = path_len + message->bucket_len + (size_t) 1U;
@@ -79,34 +112,7 @@ static void make_http_request_for_message(Message * const message)
     memcpy(uri + path_len, message->bucket, message->bucket_len);
     *(uri + sizeof_uri - (size_t) 1U) = 0;
     evhttp_make_request(ev_conn, ev_req, EVHTTP_REQ_POST, uri);
-    ALLOCA_FREE(uri);   
-}
-
-static void retain_message(Message * const message)
-{    
-    assert(message->ref_cnt < UINT_MAX);
-    message->ref_cnt++;
-}
-
-static void free_message(Message * const message)
-{
-    assert(message->ref_cnt == 0U);
-    free(message->bucket);
-    message->bucket = NULL;
-    message->bucket_len = (size_t) 0U;
-    free(message->data);
-    message->data = NULL;
-    message->data_len = (size_t) 0U;
-}
-
-static void release_message(Message * const message)
-{
-    assert(message->ref_cnt > 0U);
-    message->ref_cnt--;
-    if (message->ref_cnt > 0) {
-        return;
-    }
-    free_message(message);
+    ALLOCA_FREE(uri);
 }
 
 static void message_received_cb(struct bufferevent *bev, void * context_)
@@ -131,6 +137,7 @@ static void error_event_cb(struct bufferevent *bev, short what, void * client_)
     
     release_message(client->message);
     free(client);
+    bufferevent_free(bev);
 }
 
 static void push_read_data_cb(struct bufferevent *bev, void * client_)
@@ -208,14 +215,15 @@ static void accept_conn_cb(struct evconnlistener * listener,
     struct event_base *base = evconnlistener_get_base(listener);
     struct bufferevent *bev = bufferevent_socket_new
         (ev_base, fd, BEV_OPT_CLOSE_ON_FREE);
-    Client * const client = malloc(sizeof *client);
+    Client * const client = malloc(sizeof *client);    
     Message * const message = malloc(sizeof *message);
     message->ref_cnt = 1U;
-    message->bucket_len = (size_t) 0U;    
+    message->bucket_len = (size_t) 0U;
     message->bucket = NULL;
     message->data_len = (size_t) 0U;    
     message->data = NULL;
     memset(&message->ev_timer, 0, sizeof message->ev_timer);
+    message->ev_conn = NULL;
     client->message = message;
     bufferevent_setcb(bev, push_read_bucket_len_cb, NULL,
                       error_event_cb, client);

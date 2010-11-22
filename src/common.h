@@ -72,6 +72,7 @@ typedef struct Message_ {
     size_t data_len;
     char *data;
     struct event ev_timer;
+    struct evhttp_connection *ev_conn;
     unsigned int ref_cnt;    
 } Message;
 
