@@ -11,26 +11,70 @@ static struct evdns_base *evdns_base;
 static struct bufferevent *queue[2];
 static struct bufferevent *queue_sender, *queue_receiver;
 
-static void http_reschedule(struct evhttp_request *ev_req,
-                            struct bufferevent * const bev)
+static void make_http_request_for_message(Message * const message);
+
+static void http_reschedule_cb(evutil_socket_t fd, short event,
+                               void * const message_)
 {
-    
+    Message * const message = message_;
+    make_http_request_for_message(message);
 }
 
-static void http_request_done(struct evhttp_request *ev_req, void * bev_)
+static void http_reschedule(struct evhttp_request *ev_req,
+                            Message * const message)
 {
-    struct bufferevent * const bev = bev_;
+    struct event *ev;
+    struct timeval tv;    
+    ev = evtimer_new(ev_base, http_reschedule_cb, message);
+    tv = (struct timeval) { .tv_sec = 2, .tv_usec = 0 };
+    evtimer_add(ev, &tv);
+}
+
+static void http_request_done(struct evhttp_request *ev_req, void * const message_)
+{
+    Message * const message = message_;
+    
     if (ev_req == NULL) {
-        http_reschedule(ev_req, bev);
+        http_reschedule(ev_req, message);
         return;
     }
     int code = evhttp_request_get_response_code(ev_req);
+    printf("HTTP request done: %d\n", code);    
     if (code == 0) {
-        http_reschedule(ev_req, bev);        
+        http_reschedule(ev_req, message);
         return;
     }
-    bufferevent_enable(bev, EV_READ);
-    printf("HTTP request done: %d\n", code);
+    bufferevent_enable(queue_receiver, EV_READ);
+}
+
+static void make_http_request_for_message(Message * const message)
+{
+    struct evhttp_connection *ev_conn;
+    struct evhttp_request *ev_req;    
+    const struct evhttp_uri ** const ev_uri_pnt =
+        pnt_stack_cyterator_next(&app_context.riak_uris_iterator);    
+    const struct evhttp_uri *ev_uri = *ev_uri_pnt;
+    const char * host = evhttp_uri_get_host(ev_uri);
+    const int port = evhttp_uri_get_port(ev_uri);
+    
+    ev_conn = evhttp_connection_base_new(ev_base, evdns_base, host, port);
+    ev_req = evhttp_request_new(http_request_done, message);
+    evhttp_add_header(evhttp_request_get_output_headers(ev_req),
+                      "Host", host);
+    evhttp_add_header(evhttp_request_get_output_headers(ev_req),
+                      "Content-Type", "application/json");
+    evbuffer_add(evhttp_request_get_output_buffer(ev_req),
+                 message->data, message->data_len);
+    
+    const char * const path = evhttp_uri_get_path(ev_uri);
+    const size_t path_len = strlen(path);
+    const size_t sizeof_uri = path_len + message->bucket_len + (size_t) 1U;
+    char *uri = ALLOCA(sizeof_uri);
+    memcpy(uri, path, path_len);
+    memcpy(uri + path_len, message->bucket, message->bucket_len);
+    *(uri + sizeof_uri - (size_t) 1U) = 0;
+    evhttp_make_request(ev_conn, ev_req, EVHTTP_REQ_POST, uri);
+    ALLOCA_FREE(uri);   
 }
 
 static void retain_message(Message * const message)
@@ -63,39 +107,13 @@ static void release_message(Message * const message)
 static void message_received_cb(struct bufferevent *bev, void * context_)
 {
     Message *message;
-    struct evhttp_connection *ev_conn;
-    struct evhttp_request *ev_req;    
     struct evbuffer *input = bufferevent_get_input(bev);
     size_t len = evbuffer_get_length(input);
     assert(len >= sizeof message);   
     bufferevent_read(bev, &message, sizeof message);
-    bufferevent_disable(bev, EV_READ);    
-
-    const struct evhttp_uri ** const ev_uri_pnt =
-        pnt_stack_cyterator_next(&app_context.riak_uris_iterator);    
-    const struct evhttp_uri *ev_uri = *ev_uri_pnt;
-    const char * host = evhttp_uri_get_host(ev_uri);
-    const int port = evhttp_uri_get_port(ev_uri);
-    
-    ev_conn = evhttp_connection_base_new(ev_base, evdns_base, host, port);
-    ev_req = evhttp_request_new(http_request_done, bev);
-    evhttp_add_header(evhttp_request_get_output_headers(ev_req),
-                      "Host", host);
-    evhttp_add_header(evhttp_request_get_output_headers(ev_req),
-                      "Content-Type", "application/json");
-    evbuffer_add(evhttp_request_get_output_buffer(ev_req),
-                 message->data, message->data_len);
-    
-    const char * const path = evhttp_uri_get_path(ev_uri);
-    const size_t path_len = strlen(path);
-    const size_t sizeof_uri = path_len + message->bucket_len + (size_t) 1U;
-    char *uri = ALLOCA(sizeof_uri);
-    memcpy(uri, path, path_len);
-    memcpy(uri + path_len, message->bucket, message->bucket_len);
-    *(uri + sizeof_uri - (size_t) 1U) = 0;
-    evhttp_make_request(ev_conn, ev_req, EVHTTP_REQ_POST, uri);
-    ALLOCA_FREE(uri);
-    release_message(message);
+    assert(bev == queue_receiver);
+    bufferevent_disable(queue_receiver, EV_READ);
+    make_http_request_for_message(message);
 }
 
 static void push_read_bucket_len_cb(struct bufferevent *bev, void *ctx);
