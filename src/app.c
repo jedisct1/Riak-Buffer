@@ -275,8 +275,9 @@ int main(int argc, char *argv[])
     if (app_context.daemonize != 0 && do_daemonize() != 0) {
         return 3;
     }
+
     open_log_file();
-    
+
     ev_base = event_base_new();
     evdns_base = evdns_base_new(ev_base, 1);
     bufferevent_pair_new(ev_base,
@@ -307,16 +308,17 @@ int main(int argc, char *argv[])
                 gai_strerror(gai_err));
         return -1;
     }
-    
     struct evconnlistener *listener;    
     listener = evconnlistener_new_bind
         (ev_base, accept_conn_cb, NULL,
             LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE | LEV_OPT_CLOSE_ON_EXEC,
             -1, ai->ai_addr, ai->ai_addrlen);
-    
+    evutil_freeaddrinfo(ai);
     event_base_dispatch(ev_base);
+    evconnlistener_free(listener);
+    event_base_free(ev_base);
     close_log_file();
-    
+
     free_config();
     
     return 0;
