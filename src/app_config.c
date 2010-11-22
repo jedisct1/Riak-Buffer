@@ -153,5 +153,4 @@ void free_config(void)
     app_context.server_port = NULL;
     free(app_context.log_file_name);
     app_context.log_file_name = NULL;
-    free_pnt_stack(&app_context.riak_uris);
 }
