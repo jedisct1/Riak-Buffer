@@ -54,6 +54,7 @@ typedef struct AppContext_ {
     char *server_port;
     _Bool daemonize;
     char *log_file_name;
+    time_t retry_interval;
     int log_fd;
     PntStack riak_uris;
     PntStackIterator riak_uris_iterator;

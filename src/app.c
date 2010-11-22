@@ -26,7 +26,10 @@ static void http_reschedule(struct evhttp_request *ev_req,
     struct event *ev;
     struct timeval tv;    
     ev = evtimer_new(ev_base, http_reschedule_cb, message);
-    tv = (struct timeval) { .tv_sec = 2, .tv_usec = 0 };
+    tv = (struct timeval) {
+        .tv_sec = app_context.retry_interval,
+        .tv_usec = 0
+    };
     evtimer_add(ev, &tv);
 }
 

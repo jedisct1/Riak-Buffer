@@ -10,6 +10,7 @@ int parse_config(const char * const file)
     char *cfg_daemonize_s = NULL;
     char *cfg_log_file_name = NULL;
     char *cfg_riak_uris = NULL;
+    char *cfg_retry_interval_s = NULL;
     int ret = 0;
     ConfigKeywords config_keywords[] = {
         { "ServerIP",               &cfg_server_ip },
@@ -17,13 +18,15 @@ int parse_config(const char * const file)
         { "Daemonize",              &cfg_daemonize_s },
         { "LogFileName",            &cfg_log_file_name },
         { "RiakURIs",               &cfg_riak_uris },
-        { NULL,                     NULL }    
+        { "RetryInterval",          &cfg_retry_interval_s },
+        { NULL,                     NULL }
     };
     app_context.log_fd = -1;
     app_context.server_ip = NULL;
     app_context.server_port = strdup(DEFAULT_SERVER_PORT);
     app_context.daemonize = 0;
     app_context.log_file_name = NULL;
+    app_context.retry_interval = DEFAULT_RETRY_INTERVAL;
     init_pnt_stack(&app_context.riak_uris, (size_t) 1U,
                    sizeof (struct evhttp_uri *));
     init_pnt_stack_iterator(&app_context.riak_uris_iterator,
@@ -105,8 +108,17 @@ int parse_config(const char * const file)
             }
         }
     }
+    if (cfg_retry_interval_s != NULL) {
+        app_context.retry_interval =
+            (time_t) strtol(cfg_retry_interval_s, &endptr, 10);
+        if (endptr == NULL || endptr == cfg_retry_interval_s ||
+            app_context.retry_interval <= (time_t) 0) {
+            ret = -1;
+        }
+    }
     free(cfg_riak_uris);
     free(cfg_daemonize_s);
+    free(cfg_retry_interval_s);    
     
     return ret;
 }
