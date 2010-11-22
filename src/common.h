@@ -71,7 +71,7 @@ typedef struct Message_ {
     char *bucket;
     size_t data_len;
     char *data;
-    struct event *ev_timer;
+    struct event ev_timer;
     unsigned int ref_cnt;    
 } Message;
 

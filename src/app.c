@@ -17,9 +17,8 @@ static void http_reschedule_cb(evutil_socket_t fd, short event,
                                void * const message_)
 {
     Message * const message = message_;
-    assert(message->ev_timer != NULL);
-    event_free(message->ev_timer);
-    message->ev_timer = NULL;
+    assert(event_initialized(&message->ev_timer));
+    memset(&message->ev_timer, 0, sizeof message->ev_timer);
     make_http_request_for_message(message);
 }
 
@@ -28,13 +27,13 @@ static void http_reschedule(struct evhttp_request *ev_req,
 {
     struct event *ev;
     struct timeval tv;    
-    ev = evtimer_new(ev_base, http_reschedule_cb, message);
-    message->ev_timer = ev;
+    assert(!event_initialized(&message->ev_timer));
+    evtimer_assign(&message->ev_timer, ev_base, http_reschedule_cb, message);
     tv = (struct timeval) {
         .tv_sec = app_context.retry_interval,
         .tv_usec = 0
     };
-    evtimer_add(ev, &tv);
+    evtimer_add(&message->ev_timer, &tv);
 }
 
 static void http_request_done(struct evhttp_request *ev_req, void * const message_)
@@ -216,7 +215,7 @@ static void accept_conn_cb(struct evconnlistener * listener,
     message->bucket = NULL;
     message->data_len = (size_t) 0U;    
     message->data = NULL;
-    message->ev_timer = NULL;    
+    memset(&message->ev_timer, 0, sizeof message->ev_timer);
     client->message = message;
     bufferevent_setcb(bev, push_read_bucket_len_cb, NULL,
                       error_event_cb, client);
