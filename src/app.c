@@ -313,7 +313,7 @@ int main(int argc, char *argv[])
     
     const int gai_err = evutil_getaddrinfo(app_context.server_ip,
                                            app_context.server_port,
-                                           NULL, &ai);
+                                           &hints, &ai);
     if (gai_err != 0) {
         logfile(&app_context, LOG_ERR,
                 "Unable to start the server: [%s]",
