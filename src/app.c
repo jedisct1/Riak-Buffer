@@ -44,16 +44,18 @@ static void release_message(Message * const message)
 static void http_reschedule_cb(evutil_socket_t fd, short event,
                                void * const message_)
 {
+    (void) fd;
+    (void) event;
     Message * const message = message_;
     assert(event_initialized(&message->ev_timer));
     memset(&message->ev_timer, 0, sizeof message->ev_timer);
     make_http_request_for_message(message);
 }
 
-static void http_reschedule(struct evhttp_request *ev_req,
+static void http_reschedule(struct evhttp_request * const ev_req,
                             Message * const message)
 {
-    struct event *ev;
+    (void) ev_req;    
     struct timeval tv;    
     assert(!event_initialized(&message->ev_timer));
     evtimer_assign(&message->ev_timer, ev_base, http_reschedule_cb, message);
@@ -64,7 +66,7 @@ static void http_reschedule(struct evhttp_request *ev_req,
     evtimer_add(&message->ev_timer, &tv);
 }
 
-static void http_request_done(struct evhttp_request *ev_req,
+static void http_request_done(struct evhttp_request * const ev_req,
                               void * const message_)
 {
     Message * const message = message_;
@@ -115,8 +117,10 @@ static void make_http_request_for_message(Message * const message)
     ALLOCA_FREE(uri);
 }
 
-static void message_received_cb(struct bufferevent *bev, void * context_)
+static void message_received_cb(struct bufferevent * const bev,
+                                void * const context_)
 {
+    (void) context_;
     Message *message;
     struct evbuffer *input = bufferevent_get_input(bev);
     size_t len = evbuffer_get_length(input);
@@ -128,14 +132,13 @@ static void message_received_cb(struct bufferevent *bev, void * context_)
 }
 
 
-static void push_read_opts_and_bucket_len_cb(struct bufferevent *bev,
-                                             void * client_);
+static void push_read_opts_and_bucket_len_cb(struct bufferevent * const bev,
+                                             void * const client_);
 
 static void error_event_cb(struct bufferevent *bev, short what, void * client_)
-{    
-    Client * client = client_;
-    struct evbuffer *input = bufferevent_get_input(bev);
-    const size_t len = evbuffer_get_length(input);
+{
+    (void) what;
+    Client * const client = client_;
     
     release_message(client->message);
     free(client);
@@ -164,14 +167,14 @@ static void push_read_data_cb(struct bufferevent *bev, void * client_)
     retain_message(message);
 }
 
-static void push_read_data_len_cb(struct bufferevent *bev, void * client_)
+static void push_read_data_len_cb(struct bufferevent * const bev,
+                                  void * const client_)
 {
     Client * const client = client_;
     Message * const message = client->message;
     struct evbuffer *input = bufferevent_get_input(bev);
-    size_t len = evbuffer_get_length(input);    
     uint32_t net_data_len;
-    
+    assert(evbuffer_get_length(input) >= sizeof net_data_len);    
     bufferevent_read(bev, &net_data_len, sizeof net_data_len);
     size_t data_len = ntohl(net_data_len);
     message->data_len = data_len;
@@ -179,7 +182,8 @@ static void push_read_data_len_cb(struct bufferevent *bev, void * client_)
     bufferevent_setcb(bev, push_read_data_cb, NULL, error_event_cb, client);
 }
 
-static void push_read_bucket_cb(struct bufferevent *bev, void * client_)
+static void push_read_bucket_cb(struct bufferevent * const bev,
+                                void * const client_)
 {
     Client * const client = client_;
     Message * const message = client->message;
@@ -190,24 +194,24 @@ static void push_read_bucket_cb(struct bufferevent *bev, void * client_)
     assert(len >= message->bucket_len);
     message->bucket = malloc(bucket_len);
     bufferevent_read(bev, message->bucket, bucket_len);
-    struct evbuffer *output = bufferevent_get_output(bev);
     bufferevent_setwatermark(bev, EV_READ, 4, 4);
     bufferevent_setcb(bev, push_read_data_len_cb, NULL,
                       error_event_cb, client);
 }
 
-static void push_read_opts_and_bucket_len_cb(struct bufferevent *bev,
-                                             void * client_)
+static void push_read_opts_and_bucket_len_cb(struct bufferevent * const bev,
+                                             void * const client_)
 {
     Client * const client = client_;
     Message * const message = client->message;
     struct evbuffer *input = bufferevent_get_input(bev);
-    size_t len = evbuffer_get_length(input);
     uint32_t net_opts;
+    assert(evbuffer_get_length(input) >= sizeof net_opts);
     bufferevent_read(bev, &net_opts, sizeof net_opts);
     const uint32_t opts = ntohl(net_opts);
     assert(opts == (uint32_t) 0U);
     uint32_t net_bucket_len;
+    assert(evbuffer_get_length(input) >= sizeof net_bucket_len);    
     bufferevent_read(bev, &net_bucket_len, sizeof net_bucket_len);
     size_t bucket_len = ntohl(net_bucket_len);
     message->bucket_len = bucket_len;
@@ -215,11 +219,14 @@ static void push_read_opts_and_bucket_len_cb(struct bufferevent *bev,
     bufferevent_setcb(bev, push_read_bucket_cb, NULL, error_event_cb, client);
 }
 
-static void accept_conn_cb(struct evconnlistener * listener,
-                           evutil_socket_t fd, struct sockaddr * address,
-                           int socklen, void * context_)
+static void accept_conn_cb(struct evconnlistener * const listener,
+                           evutil_socket_t fd, struct sockaddr * const address,
+                           int socklen, void * const context_)
 {
-    struct event_base *base = evconnlistener_get_base(listener);
+    (void) address;
+    (void) socklen;
+    (void) context_;
+    assert(ev_base == evconnlistener_get_base(listener));
     struct bufferevent *bev = bufferevent_socket_new
         (ev_base, fd, BEV_OPT_CLOSE_ON_FREE);
     Client * const client = malloc(sizeof *client);    
