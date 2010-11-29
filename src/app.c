@@ -127,7 +127,9 @@ static void message_received_cb(struct bufferevent *bev, void * context_)
     make_http_request_for_message(message);
 }
 
-static void push_read_bucket_len_cb(struct bufferevent *bev, void *ctx);
+
+static void push_read_opts_and_bucket_len_cb(struct bufferevent *bev,
+                                             void * client_);
 
 static void error_event_cb(struct bufferevent *bev, short what, void * client_)
 {    
@@ -156,7 +158,7 @@ static void push_read_data_cb(struct bufferevent *bev, void * client_)
     
     evbuffer_add(output, "OK\n", sizeof "OK\n" - 1U);
     bufferevent_setwatermark(bev, EV_READ, 4, 4);
-    bufferevent_setcb(bev, push_read_bucket_len_cb, NULL,
+    bufferevent_setcb(bev, push_read_opts_and_bucket_len_cb, NULL,
                       error_event_cb, client);
     bufferevent_write(queue_sender, &message, sizeof message);
     retain_message(message);
@@ -194,12 +196,17 @@ static void push_read_bucket_cb(struct bufferevent *bev, void * client_)
                       error_event_cb, client);
 }
 
-static void push_read_bucket_len_cb(struct bufferevent *bev, void * client_)
+static void push_read_opts_and_bucket_len_cb(struct bufferevent *bev,
+                                             void * client_)
 {
     Client * const client = client_;
     Message * const message = client->message;
     struct evbuffer *input = bufferevent_get_input(bev);
-    size_t len = evbuffer_get_length(input);    
+    size_t len = evbuffer_get_length(input);
+    uint32_t net_opts;
+    bufferevent_read(bev, &net_opts, sizeof net_opts);
+    const uint32_t opts = ntohl(net_opts);
+    assert(opts == (uint32_t) 0U);
     uint32_t net_bucket_len;
     bufferevent_read(bev, &net_bucket_len, sizeof net_bucket_len);
     size_t bucket_len = ntohl(net_bucket_len);
@@ -225,9 +232,9 @@ static void accept_conn_cb(struct evconnlistener * listener,
     memset(&message->ev_timer, 0, sizeof message->ev_timer);
     message->ev_conn = NULL;
     client->message = message;
-    bufferevent_setcb(bev, push_read_bucket_len_cb, NULL,
+    bufferevent_setcb(bev, push_read_opts_and_bucket_len_cb, NULL,
                       error_event_cb, client);
-    bufferevent_setwatermark(bev, EV_READ, 4, 4);
+    bufferevent_setwatermark(bev, EV_READ, 4 * 2, 4 * 2);
     bufferevent_enable(bev, EV_READ);
 }
 
