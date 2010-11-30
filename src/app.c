@@ -72,7 +72,6 @@ static void http_request_done(struct evhttp_request * const ev_req,
     Message * const message = message_;
 
     assert(message->ev_conn != NULL);
-    evhttp_connection_free(message->ev_conn);
     message->ev_conn = NULL;    
     if (ev_req == NULL) {
         http_reschedule(ev_req, message);
@@ -131,7 +130,6 @@ static void message_received_cb(struct bufferevent * const bev,
     make_http_request_for_message(message);
 }
 
-
 static void push_read_opts_and_bucket_len_cb(struct bufferevent * const bev,
                                              void * const client_);
 
@@ -157,19 +155,18 @@ static void push_read_data_cb(struct bufferevent *bev, void * client_)
     message->data = malloc(data_len);
     bufferevent_read(bev, message->data, data_len);
     
-    struct evbuffer * const output = bufferevent_get_output(bev);
-    
+    struct evbuffer * const output = bufferevent_get_output(bev);            
     evbuffer_add(output, "OK\n", sizeof "OK\n" - 1U);
-    bufferevent_setwatermark(bev, EV_READ, 4, 4);
     bufferevent_setcb(bev, push_read_opts_and_bucket_len_cb, NULL,
-                      error_event_cb, client);
+                      error_event_cb, client);                
+    bufferevent_setwatermark(bev, EV_READ, 4 * 2, 4 * 2);    
+    retain_message(message);    
     bufferevent_write(queue_sender, &message, sizeof message);
-    retain_message(message);
 }
 
 static void push_read_data_len_cb(struct bufferevent * const bev,
                                   void * const client_)
-{
+{    
     Client * const client = client_;
     Message * const message = client->message;
     struct evbuffer *input = bufferevent_get_input(bev);
@@ -178,13 +175,13 @@ static void push_read_data_len_cb(struct bufferevent * const bev,
     bufferevent_read(bev, &net_data_len, sizeof net_data_len);
     size_t data_len = ntohl(net_data_len);
     message->data_len = data_len;
-    bufferevent_setwatermark(bev, EV_READ, data_len, data_len);
+    bufferevent_setwatermark(bev, EV_READ, data_len, data_len);        
     bufferevent_setcb(bev, push_read_data_cb, NULL, error_event_cb, client);
 }
 
 static void push_read_bucket_cb(struct bufferevent * const bev,
                                 void * const client_)
-{
+{    
     Client * const client = client_;
     Message * const message = client->message;
     struct evbuffer *input = bufferevent_get_input(bev);    
@@ -194,7 +191,7 @@ static void push_read_bucket_cb(struct bufferevent * const bev,
     assert(len >= message->bucket_len);
     message->bucket = malloc(bucket_len);
     bufferevent_read(bev, message->bucket, bucket_len);
-    bufferevent_setwatermark(bev, EV_READ, 4, 4);
+    bufferevent_setwatermark(bev, EV_READ, 4, 4);  
     bufferevent_setcb(bev, push_read_data_len_cb, NULL,
                       error_event_cb, client);
 }
