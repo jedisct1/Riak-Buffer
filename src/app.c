@@ -72,6 +72,7 @@ static void http_request_done(struct evhttp_request * const ev_req,
     Message * const message = message_;
 
     assert(message->ev_conn != NULL);
+    evhttp_connection_free(message->ev_conn);
     message->ev_conn = NULL;    
     if (ev_req == NULL) {
         http_reschedule(ev_req, message);
