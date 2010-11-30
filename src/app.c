@@ -209,7 +209,7 @@ static void push_read_opts_and_bucket_len_cb(struct bufferevent * const bev,
     assert(evbuffer_get_length(input) >= sizeof net_opts);
     bufferevent_read(bev, &net_opts, sizeof net_opts);
     const uint32_t opts = ntohl(net_opts);
-    assert(opts == (uint32_t) 0U);
+    (void) opts;
     uint32_t net_bucket_len;
     assert(evbuffer_get_length(input) >= sizeof net_bucket_len);    
     bufferevent_read(bev, &net_bucket_len, sizeof net_bucket_len);
@@ -304,7 +304,10 @@ int main(int argc, char *argv[])
 
     open_log_file();
 
-    ev_base = event_base_new();
+    struct event_config *ev_config;
+    ev_config = event_config_new();
+    event_config_set_flag(ev_config, EVENT_BASE_FLAG_EPOLL_USE_CHANGELIST);
+    ev_base = event_base_new_with_config(ev_config);
     evdns_base = evdns_base_new(ev_base, 1);
     bufferevent_pair_new(ev_base,
                          BEV_OPT_CLOSE_ON_FREE  |
@@ -343,6 +346,7 @@ int main(int argc, char *argv[])
     event_base_dispatch(ev_base);
     evconnlistener_free(listener);
     event_base_free(ev_base);
+    event_config_free(ev_config);
     close_log_file();
 
     free_config();

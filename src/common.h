@@ -29,6 +29,7 @@
 #include <syslog.h>
 #include <sys/socket.h>
 #include <event.h>
+#include <event2/event.h>
 #include <event2/listener.h>
 #include <event2/http.h>
 #include <event2/dns.h>
